@@ -15,7 +15,7 @@
  */
 
 string product = "AVsitter™ RLV";
-string #version = "2.2p04";
+string #version = "2.2p05";
 integer ignorenextswap;
 string notecard_name = "AVpos";
 string unDressScript = "[AV]root-RLV-extra";
@@ -66,7 +66,8 @@ string controllerName;
 key SLAVE;
 string slaveName;
 integer slaveWearingRelay;
-list CAPTIVES;
+list CAPTIVES; // strided name, uuid
+list CAPTIVE_POSES_FLAGS; // strided last pose, flags
 list SITTERS;
 list SITTING_AVATARS;
 list SITTERS_MENUKEYS;
@@ -283,6 +284,7 @@ dialog(string text, list buttons)
 reset()
 {
     CAPTIVES = [];
+    CAPTIVE_POSES_FLAGS = [];
     CONTROLLER = "";
     controllerHasKeys = FALSE;
     TimelockHidden = FALSE;
@@ -323,6 +325,7 @@ release(key SLAVE, integer allowUnsit)
     if (index != -1)
     {
         CAPTIVES = llDeleteSubList(CAPTIVES, index - 1, index);
+        CAPTIVE_POSES_FLAGS = llDeleteSubList(CAPTIVE_POSES_FLAGS, index - 1, index);
         llSay(0, llKey2Name(SLAVE) + " was released.");
         relay(SLAVE, baseReleaseRestrictions);
         relay(SLAVE, "!release");
@@ -481,6 +484,7 @@ find_seat(key id, integer index, string msg, integer captureSub)
                     if (llListFindList(SITTING_AVATARS, [llList2Key(CAPTIVES, i)]) == -1)
                     {
                         CAPTIVES = llDeleteSubList(CAPTIVES, i - 1, i);
+                        CAPTIVE_POSES_FLAGS = llDeleteSubList(CAPTIVE_POSES_FLAGS, i - 1, i);
                     }
                     i -= 2;
                 }
@@ -676,6 +680,32 @@ state running
             {
                 list data = llParseStringKeepNulls(msg, ["|"], []);
                 SITTERS = llParseStringKeepNulls(llList2String(data, 4), ["@"], []);
+                
+                integer index = llListFindList(CAPTIVES, [id]);
+
+                if (index > -1)
+                {
+                        if (llList2Integer(CAPTIVE_POSES_FLAGS, index) == 2)
+                        {
+                                                string new_pose = llList2String(data,1);
+                                                string original_pose = llList2String(CAPTIVE_POSES_FLAGS, index - 1);
+                                                if (new_pose != original_pose && original_pose != "")
+                                                {
+                                                        // reapply the correct previous pose
+                                                        llMessageLinked(LINK_THIS, 90000, llList2String(CAPTIVE_POSES_FLAGS, index - 1), id);
+                                                }
+                                                else
+                                                {
+                                                        // either it's now right or we didn't have a previous pose
+                                                        CAPTIVE_POSES_FLAGS = llListReplaceList(CAPTIVE_POSES_FLAGS, [new_pose, 0], index - 1, index);
+                                                }
+                        }
+                        else if (llList2Integer(CAPTIVE_POSES_FLAGS, index) == 0)
+                        {
+                                CAPTIVE_POSES_FLAGS = llListReplaceList(CAPTIVE_POSES_FLAGS, [new_pose], index - 1, index - 1);
+                        }
+                        // 1 indicates logged off
+                }
             }
         }
         else if (num == 90060)
@@ -711,6 +741,12 @@ state running
                     DESIGNATIONS_NOW = llListReplaceList(DESIGNATIONS_NOW, [id], one, one);
                 }
             }
+            // if a captive has just sat again trigger the logic to reinstate their last position
+            integer index = llListFindList(CAPTIVES, [id]);
+            if (index > -1 && llList2Integer(CAPTIVE_POSES_FLAGS,index)==1)
+            {
+                    CAPTIVE_POSES_FLAGS = llListReplaceList(CAPTIVE_POSES_FLAGS,[2], index, index);
+            }
         }
         else if (num == 90065)
         {
@@ -725,6 +761,12 @@ state running
             {
                 DESIGNATIONS_NOW = llListReplaceList(DESIGNATIONS_NOW, llList2List(SITTER_DESIGNATIONS_MASTER, index, index), index, index);
                 llMessageLinked(LINK_THIS, 90206, llDumpList2String(DESIGNATIONS_NOW, "|"), "");
+            }
+            // if a captive has just unsat/logged off prime the logic to restore their last position
+            index = llListFindList(CAPTIVES, [id]);
+            if (index > -1)
+            {
+                    CAPTIVE_POSES_FLAGS = llListReplaceList(CAPTIVE_POSES_FLAGS,[1], index ,index);
             }
         }
         else if (num == 90012)
@@ -883,9 +925,11 @@ state running
                 if (llListFindList(CAPTIVES, [newSlave]) == -1)
                 {
                     CAPTIVES += [newSlaveName, newSlave];
+                    CAPTIVE_POSES_FLAGS += ["", 0];
                     if (llGetListLength(CAPTIVES) / 2 > llGetListLength(DESIGNATIONS_NOW))
                     {
                         CAPTIVES = llDeleteSubList(CAPTIVES, 0, 1);
+                        CAPTIVE_POSES_FLAGS = llDeleteSubList(CAPTIVE_POSES_FLAGS, 0, 1);
                     }
                 }
                 llSetTimerEvent(1);
@@ -926,6 +970,7 @@ state running
                         }
                     }
                     CAPTIVES = llDeleteSubList(CAPTIVES, index - 1, index);
+                    CAPTIVE_POSES_FLAGS = llDeleteSubList(CAPTIVE_POSES_FLAGS, index - 1, index);
                 }
             }
         }
