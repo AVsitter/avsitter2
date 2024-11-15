@@ -472,6 +472,10 @@ default
         if (SCRIPT_CHANNEL)
         {
             memoryscript += " " + (string)SCRIPT_CHANNEL;
+            if (llGetInventoryType(notecard_name + " " + (string)SCRIPT_CHANNEL) == INVENTORY_NOTECARD)
+            {
+                notecard_name = notecard_name + " " + (string)SCRIPT_CHANNEL;
+            }
         }
         else
         {
